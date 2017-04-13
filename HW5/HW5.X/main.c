@@ -8,6 +8,10 @@
  * ME 433 Advanced Mechatronics
  * 
  * Homework 5:
+ * Use the MCP23008 I/O expander to read from a pushbutton input and output to 
+ * an LED. The LED is on by default and turns off when the button is pushed.
+ * Communication between the PIC32MX250F128B (master) and the MCP23008 (slave)
+ * is over 12C2.
  * 
  */
 
@@ -18,7 +22,7 @@
 
 #include<xc.h>                      // processor SFR definitions
 #include<sys/attribs.h>             // __ISR macro
-#include<math.h>                    // for sine function
+#include "i2c_master_noint.h"       // I2C functions
 
 // DEVCFG0
 #pragma config DEBUG = OFF          // no debugging
@@ -55,7 +59,10 @@
 #pragma config FUSBIDIO = ON        // USB pins controlled by USB module
 #pragma config FVBUSONIO = ON       // USB BUSON controlled by USB module
 
-#define CS LATBbits.LATB15          // B15 is chip select pin
+#define SLAVE_ADDR 0x20             // MCP23008 address
+#define IODIR 0x00                  // address for input/output direction register
+#define GPIO 0x09                   // address for the read register
+#define OLAT 0x0A                   // address for the write register
 
 
 /******************************************************************************
@@ -68,56 +75,21 @@
  *  GLOBAL VARIABLES
  *****************************************************************************/
 
-static volatile unsigned char channel = 0;
-static volatile unsigned int i = 0;
-static volatile float t = 0;
 
 
 /******************************************************************************
  *  HELPER FUNCTION PROTOTYPES
  *****************************************************************************/
 
-void initTMR2(void);
-void initSPI1(void);
+void initExpander(void);
+void setExpander(unsigned char pin, unsigned char level);
+unsigned char getExpander(void);
 
 
 /******************************************************************************
  *  INTERRUPT SERVICE ROUTINES
  *****************************************************************************/
 
-void __ISR(_TIMER_2_VECTOR, IPL5SOFT) Timer2(void) {
-    float temp;
-    unsigned char voltage, write1, write2, garbage;    
-    t = ((float) i)/2000.0;                     // time in seconds
-    if (channel == 0) {                         // voltage for channel A between 0 and 255 as 10 Hz sine wave
-        temp = 128.0*sin(20.0*3.14159*t) + 128.0; // temporary variable to calculate voltage as a float
-        voltage = temp;                         // store voltage as char
-        write1 = 0b01110000 | (voltage >> 4);   // config bits plus the first 4 voltage bits
-        write2 = (voltage << 4) | 0b00000000;   // second 4 voltage bits plus 4 zero bits
-        channel = 1;                            // swap channels each time through ISR
-    }
-    else {                                      // voltage for channel B between 0 and 255 as 5 Hz sawtooth wave (t will reset at 100 ms)
-        temp = 2550*t;                          // temporary variable to calculate voltage as a float
-        voltage = temp;                         // store voltage as char
-        write1 = 0b11110000 | (voltage >> 4);   // config bits plus the first 4 voltage bits
-        write2 = (voltage << 4) | 0b00000000;   // second 4 voltage bits plus 4 zero bits
-        channel = 0;                            // swap channels each time through ISR
-    }
-    CS = 0;                                     // command being sent
-    SPI1BUF = write1;                           // send 1st half of voltage command to DAC
-    while (!SPI1STATbits.SPIRBF){ ; }           // wait for the "response"
-    garbage = SPI1BUF;                          // read garbage in buffer 
-    SPI1BUF = write2;                           // send 2nd half of voltage command to DAC
-    while (!SPI1STATbits.SPIRBF){ ; }           // wait for the "response"
-    garbage = SPI1BUF;                          // read garbage in buffer 
-    CS = 1;                                     // command is complete
-    i++;                                        // increase counter (in increments of 0.5 ms)
-    if (i > 200) {                              
-        i = 0;                                  // reset counter every 100 ms (10 Hz)
-        channel = 1;                            // set channel to 1 so that sine wave is continuous
-    }
-    IFS0bits.T2IF = 0;                          // clear interrupt flag
-}
 
 
 /******************************************************************************
@@ -139,15 +111,20 @@ int main() {
     // disable JTAG to get pins back
     DDPCONbits.JTAGEN = 0;
 
-    // initialize SPI1
-    initSPI1();
+    // initialize I2C2 for the MCP23008
+    initExpander();    
+    unsigned char temp;
     
-    // initialize timer 2 interrupt
-    initTMR2();
-        
     __builtin_enable_interrupts();
 
-    while(1) { ; } // infinite loop, waiting on timer 2 interrupt
+    while(1) {
+        setExpander(0,1);             // turn yellow LED on (set pin GP0 high) 
+        temp = (getExpander()>>7);    // should see pin go low when button is pressed
+        while(!temp) {                // while button is being pressed (reads low)
+            setExpander(0,0);         // turn off yellow LED (set pin GP0 low)
+            temp = (getExpander()>>7);
+        }
+    }
 }
 
 
@@ -155,27 +132,37 @@ int main() {
  *  HELPER FUNCTIONS
  *****************************************************************************/
 
-void initTMR2(void) {
-    T2CONbits.TCKPS = 0;    // Timer2 prescaler N=1 (1:1)
-	PR2 = 23999;			// period = (PR2+1) * N * 20.8333 ns = 0.5 ms, 2 kHz
-	TMR2 = 0;				// initial TMR2 count is 0
-	T2CONbits.ON = 1;		// turn on Timer2
-    IPC2bits.T2IP = 5;      // priority
-	IPC2bits.T2IS = 0;      // subpriority
-	IFS0bits.T2IF = 0;      // clear interrupt flag
-	IEC0bits.T2IE = 1;      // enable interrupt
+void initExpander(void) {
+    ANSELBbits.ANSB2 = 0;                   // disable analog input on B2
+    ANSELBbits.ANSB3 = 0;                   // disable analog input on B3
+    i2c_master_setup();                     // set baud rate and turn on I2C2
+    i2c_master_start();                     // begin the start sequence
+    i2c_master_send(SLAVE_ADDR << 1 | 0);   // indicate write to slave
+    i2c_master_send(IODIR);                 // writing to IODIR register
+    i2c_master_send(0xF0);                  // GP0-GP3 as outputs, GP4-GP7 as inputs
+    i2c_master_restart();                   // restart 
+    i2c_master_send(SLAVE_ADDR << 1 | 0);   // indicate write to slave
+    i2c_master_send(OLAT);                  // writing to OLAT register
+    i2c_master_send(0x00);                  // turn all outputs off initially
+    i2c_master_stop();                      // stop
 }
 
-void initSPI1(void) {           // set up spi 1 (SCK1 is B14 by default)
-    TRISBbits.TRISB15 = 0;      // B15 is output used for CS
-    CS = 1;                     // set CS high (no command being sent)
-    RPB8Rbits.RPB8R = 0b0011;   // B8 is SDO1
-    SDI1Rbits.SDI1R = 0b0000;   // SDI1 is A1 (not used though, DAC is one way)
-    SPI1CON = 0;                // turn off the spi module and reset it
-    SPI1BUF;                    // clear the rx buffer by reading from it
-    SPI1BRG = 0x1;              // baud rate to 12 MHz [SPI1BRG = (48000000/(2*desired))-1] (0x1 for 12 MHz, 0x95F for 10 kHz))
-    SPI1STATbits.SPIROV = 0;    // clear the overflow bit
-    SPI1CONbits.CKE = 1;        // data changes when clock goes from high to low (since CKP is 0)
-    SPI1CONbits.MSTEN = 1;      // master operation
-    SPI1CONbits.ON = 1;         // turn on spi 1    
+void setExpander(unsigned char pin, unsigned char level) {
+    i2c_master_start();                     // begin the start sequence
+    i2c_master_send(SLAVE_ADDR << 1 | 0);   // indicate write to slave
+    i2c_master_send(OLAT);                  // writing to OLAT register
+    i2c_master_send((level << pin));        // turn pin on or off
+    i2c_master_stop();                      // stop
+}
+
+unsigned char getExpander(void) {
+    i2c_master_start();                     // begin the start sequence
+    i2c_master_send(SLAVE_ADDR << 1 | 0);   // indicate write to slave
+    i2c_master_send(GPIO);                  // reading from GPIO register
+    i2c_master_restart();                   // restart sequence
+    i2c_master_send(SLAVE_ADDR << 1 | 1);   // indicate read from slave
+    unsigned char read = i2c_master_recv(); // receive a byte from the bus
+    i2c_master_ack(1);                      // master needs no more bytes
+    i2c_master_stop();                      // stop 
+    return read;
 }
