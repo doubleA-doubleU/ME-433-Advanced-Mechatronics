@@ -63,7 +63,8 @@ SUBSTITUTE GOODS, TECHNOLOGY, SERVICES, OR ANY CLAIMS BY THIRD PARTIES
 // Section: Global Data Definitions
 // *****************************************************************************
 // *****************************************************************************
-
+unsigned char array[14]; // char array for accelerometer data
+short temperature=0, gyroX=0, gyroY=0, gyroZ=0, accelX=0, accelY=0, accelZ=0;
 // *****************************************************************************
 /* Application Data
 
@@ -263,6 +264,9 @@ void APP_USBDeviceEventHandler(USB_DEVICE_EVENT event, void * eventData, uintptr
  */
 
 void APP_Initialize(void) {
+    // initialize accelerometer
+    initAccel();
+    
     /* Place the App state machine in its initial state. */
     appData.state = APP_STATE_INIT;
     appData.deviceHandle = USB_DEVICE_HANDLE_INVALID;
@@ -281,10 +285,7 @@ void APP_Initialize(void) {
  */
 
 void APP_Tasks(void) {
-    static int8_t vector = 0;
-    static uint8_t movement_length = 0;
-    int8_t dir_table[] = {-4, -4, -4, 0, 4, 4, 4, 0};
-
+    static uint8_t inc = 0;
     /* Check the application's current state. */
     switch (appData.state) {
             /* Application's initial state. */
@@ -320,16 +321,26 @@ void APP_Tasks(void) {
 
         case APP_STATE_MOUSE_EMULATE:
             
-            // every 50th loop, or 20 times per second
-            if (movement_length > 50) {
+            if (inc > 10) {
+                // read current accelerometer data
+                I2C_read_multiple(OUT_TEMP_L, array, 14);
+
+                // update variables
+                accelX = array[9] << 8 | array[8];
+                accelX = accelX/512; // scale down raw data
+                accelY = array[11] << 8 | array[10];
+                accelY = accelY/512; // scale down raw data
+                
                 appData.mouseButton[0] = MOUSE_BUTTON_STATE_RELEASED;
                 appData.mouseButton[1] = MOUSE_BUTTON_STATE_RELEASED;
-                appData.xCoordinate = (int8_t) dir_table[vector & 0x07];
-                appData.yCoordinate = (int8_t) dir_table[(vector + 2) & 0x07];
-                vector++;
-                movement_length = 0;
+                appData.xCoordinate = (int8_t) accelX;
+                appData.yCoordinate = (int8_t) accelY;
+                inc = 0;
+            } else {
+                appData.xCoordinate = (int8_t) 0;
+                appData.yCoordinate = (int8_t) 0;
             }
-
+            inc++;
             if (!appData.isMouseReportSendBusy) {
                 /* This means we can send the mouse report. The
                    isMouseReportBusy flag is updated in the HID Event Handler. */
@@ -380,7 +391,6 @@ void APP_Tasks(void) {
                             sizeof (MOUSE_REPORT));
                     appData.setIdleTimer = 0;
                 }
-                movement_length++;
             }
 
             break;
