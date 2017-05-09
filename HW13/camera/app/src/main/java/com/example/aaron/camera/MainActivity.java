@@ -1,29 +1,38 @@
 package com.example.aaron.camera;
 
 // libraries
+
+import android.Manifest;
 import android.app.Activity;
+import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.Paint;
 import android.graphics.SurfaceTexture;
 import android.hardware.Camera;
 import android.os.Bundle;
+import android.support.v4.app.ActivityCompat;
+import android.support.v4.content.ContextCompat;
 import android.view.SurfaceHolder;
 import android.view.SurfaceView;
 import android.view.TextureView;
 import android.view.WindowManager;
 import android.widget.TextView;
+import android.widget.SeekBar;
+
 import java.io.IOException;
+
 import static android.graphics.Color.blue;
 import static android.graphics.Color.green;
 import static android.graphics.Color.red;
+import static android.graphics.Color.rgb;
 
 public class MainActivity extends Activity implements TextureView.SurfaceTextureListener {
     private Camera mCamera;
     private TextureView mTextureView;
     private SurfaceView mSurfaceView;
     private SurfaceHolder mSurfaceHolder;
-    private Bitmap bmp = Bitmap.createBitmap(640,480,Bitmap.Config.ARGB_8888);
+    private Bitmap bmp = Bitmap.createBitmap(640, 480, Bitmap.Config.ARGB_8888);
     private Canvas canvas = new Canvas(bmp);
     private Paint paint1 = new Paint();
     private TextView mTextView;
@@ -35,24 +44,35 @@ public class MainActivity extends Activity implements TextureView.SurfaceTexture
         setContentView(R.layout.activity_main);
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON); // keeps the screen from turning off
 
-        mSurfaceView = (SurfaceView) findViewById(R.id.surfaceview);
-        mSurfaceHolder = mSurfaceView.getHolder();
-
-        mTextureView = (TextureView) findViewById(R.id.textureview);
-        mTextureView.setSurfaceTextureListener(this);
-
         mTextView = (TextView) findViewById(R.id.cameraStatus);
 
-        paint1.setColor(0xffff0000); // red
-        paint1.setTextSize(24);
+        // see if the app has permission to use the camera
+        ActivityCompat.requestPermissions(MainActivity.this, new String[]{Manifest.permission.CAMERA}, 1);
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
+            mSurfaceView = (SurfaceView) findViewById(R.id.surfaceview);
+            mSurfaceHolder = mSurfaceView.getHolder();
+
+            mTextureView = (TextureView) findViewById(R.id.textureview);
+            mTextureView.setSurfaceTextureListener(this);
+
+            // set the paintbrush for writing text on the image
+            paint1.setColor(0xffff0000); // red
+            paint1.setTextSize(24);
+
+            mTextView.setText("started camera");
+        } else {
+            mTextView.setText("no camera permissions");
+            // add line to restart app??
+        }
+
     }
 
     public void onSurfaceTextureAvailable(SurfaceTexture surface, int width, int height) {
-        mCamera = Camera.open();
+        mCamera = Camera.open(); // might crash here if native camera app is running
         Camera.Parameters parameters = mCamera.getParameters();
         parameters.setPreviewSize(640, 480);
-        parameters.setColorEffect(Camera.Parameters.EFFECT_MONO); // black and white
         parameters.setFocusMode(Camera.Parameters.FOCUS_MODE_INFINITY); // no autofocusing
+        parameters.setAutoExposureLock(true); // keep the white balance constant
         mCamera.setParameters(parameters);
         mCamera.setDisplayOrientation(90); // rotate to portrait mode
 
@@ -76,58 +96,40 @@ public class MainActivity extends Activity implements TextureView.SurfaceTexture
 
     // the important function
     public void onSurfaceTextureUpdated(SurfaceTexture surface) {
-        // Invoked every time there is a new Camera preview frame
+        // every time there is a new Camera preview frame
         mTextureView.getBitmap(bmp);
 
         final Canvas c = mSurfaceHolder.lockCanvas();
         if (c != null) {
+            int thresh = 0; // comparison value
+            int[] pixels = new int[bmp.getWidth()]; // pixels[] is the RGBA data
+            int startY = 200; // which row in the bitmap to analyze to read
+            bmp.getPixels(pixels, 0, bmp.getWidth(), 0, startY, bmp.getWidth(), 1);
 
-            int[] pixels = new int[bmp.getWidth()];
-            int startY = 15; // which row in the bitmap to analyze to read
-            // only look at one row in the image
-            bmp.getPixels(pixels, 0, bmp.getWidth(), 0, startY, bmp.getWidth(), 1); // (array name, offset inside array, stride (size of row), start x, start y, num pixels to read per row, num rows to read)
-
-            // pixels[] is the RGBA data (in black and white).
-            // instead of doing center of mass on it, decide if each pixel is dark enough to consider black or white
-            // then do a center of mass on the thresholded array
-            int[] thresholdedPixels = new int[bmp.getWidth()];
-            int wbTotal = 0; // total mass
-            int wbCOM = 0; // total (mass time position)
+            // in the row, see if there is more green than red
             for (int i = 0; i < bmp.getWidth(); i++) {
-                // sum the red, green and blue, subtract from 255 to get the darkness of the pixel.
-                // if it is greater than some value (600 here), consider it black
-                // play with the 600 value if you are having issues reliably seeing the line
-                if (255*3-(red(pixels[i])+green(pixels[i])+blue(pixels[i])) > 600) {
-                    thresholdedPixels[i] = 255*3;
+                if ((green(pixels[i]) - red(pixels[i])) > thresh) {
+                    pixels[i] = rgb(0, 255, 0); // over write the pixel with pure green
                 }
-                else {
-                    thresholdedPixels[i] = 0;
-                }
-                wbTotal = wbTotal + thresholdedPixels[i];
-                wbCOM = wbCOM + thresholdedPixels[i]*i;
-            }
-            int COM;
-            //watch out for divide by 0
-            if (wbTotal<=0) {
-                COM = bmp.getWidth()/2;
-            }
-            else {
-                COM = wbCOM/wbTotal;
             }
 
-            // draw a circle where you think the COM is
-            canvas.drawCircle(COM, startY, 5, paint1);
-
-            // also write the value as text
-            canvas.drawText("COM = " + COM, 10, 200, paint1);
-            c.drawBitmap(bmp, 0, 0, null);
-            mSurfaceHolder.unlockCanvasAndPost(c);
-
-            // calculate the FPS to see how fast the code is running
-            long nowtime = System.currentTimeMillis();
-            long diff = nowtime - prevtime;
-            mTextView.setText("FPS " + 1000/diff);
-            prevtime = nowtime;
+            // update the row
+            bmp.setPixels(pixels, 0, bmp.getWidth(), 0, startY, bmp.getWidth(), 1);
         }
+
+        // draw a circle at some position
+        int pos = 50;
+        canvas.drawCircle(pos, 240, 5, paint1); // x position, y position, diameter, color
+
+        // write the pos as text
+        canvas.drawText("pos = " + pos, 10, 200, paint1);
+        c.drawBitmap(bmp, 0, 0, null);
+        mSurfaceHolder.unlockCanvasAndPost(c);
+
+        // calculate the FPS to see how fast the code is running
+        long nowtime = System.currentTimeMillis();
+        long diff = nowtime - prevtime;
+        mTextView.setText("FPS " + 1000 / diff);
+        prevtime = nowtime;
     }
 }
