@@ -1,57 +1,42 @@
 function client()
-%   provides a menu for accessing PIC32 motor control functions
-%
-%   client(port)
-%
-%   Input Arguments:
-%       port - the name of the com port.  This should be the same as what
-%               you use in screen or putty in quotes ' '
-%
-%   Example:
-%       client('/dev/ttyUSB0') (Linux/Mac)
-%       client('COM3') (PC)
-%
-%   For convenience, you may want to change this so that the port is hardcoded.
-   
-% Opening COM connection
-port = 'COM3';
+data = zeros(100,4); % four values per sample: RAW, MAF, IIR, FIR
+times = zeros(1,100);
 if ~isempty(instrfind)
     fclose(instrfind);
     delete(instrfind);
 end
-
-fprintf('Opening port %s....\n',port);
-
-% settings for opening the serial port. baud rate 230400, hardware flow control
-% wait up to 30 seconds for data before timing out
-mySerial = serial(port, 'BaudRate', 9600,'Timeout',30); 
-% opens serial connection
+mySerial = serial('COM3', 'BaudRate', 9600,'Timeout',30); 
 fopen(mySerial);
-% closes serial port when function exits
 clean = onCleanup(@()fclose(mySerial));                                 
-
-has_quit = false;
-% menu loop
-while ~has_quit
-    fprintf('\nPIC32 ACCELEROMETER INTERFACE\n\n');
-    % display the menu options; this list will grow
-    fprintf('     q: Quit client                        r: Read accelerometer\n');
-
-    % read the user's choice
-    selection = input('\nENTER COMMAND: ', 's');
-     
-    % send the command to the PIC32
-    fprintf(mySerial,'%c',selection);
-    
-    % take the appropriate action
-    switch selection
-        case 'q'
-            has_quit = true;             % exit client
-        case 'r'
-            read_plot_matrix(mySerial);
-        otherwise
-            fprintf('Invalid Selection %c\n', selection);
-    end
+fprintf(mySerial,'r'); %send an 'r'
+r = fscanf(mySerial,'%c'); %read the 'r' that is returned
+for i=1:100
+    data(i,:) = fscanf(mySerial,'%d %f %f %f'); % read in data from PIC32 
+    times(i) = (i)*0.01; % 0.01 s between samples, 1s of data
 end
+figure
+stairs(times,data(:,1));
+hold
+stairs(times,data(:,2)); % RAW v MAF
+title('RAW vs. MAF');
+xlabel('Time (s)');
+ylabel('accelZ');
+legend('RAW','MAF');
 
-end
+figure
+stairs(times,data(:,1));
+hold
+stairs(times,data(:,3)); % RAW v IIR
+title('RAW vs. IIR');
+xlabel('Time (s)');
+ylabel('accelZ');
+legend('RAW','IIR');
+
+figure
+stairs(times,data(:,1));
+hold
+stairs(times,data(:,4)); % RAW v FIR
+title('RAW vs. FIR');
+xlabel('Time (s)');
+ylabel('accelZ');
+legend('RAW','FIR');

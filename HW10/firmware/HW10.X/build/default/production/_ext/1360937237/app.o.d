@@ -224,6 +224,5 @@ build/default/production/_ext/1360937237/app.o:  \
  ../../../../../../../../../../microchip/harmony/v1_10/framework/usb/usb_device_cdc.h  \
  ../../../../../../../../../../microchip/harmony/v1_10/framework/usb/usb_cdc.h  \
  ../src/app.h  \
-../src/ILI9163C.h  \
 ../src/i2c_master_noint.h  \
- ../src/LSM6DS33.h 
+../src/LSM6DS33.h 

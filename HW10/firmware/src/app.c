@@ -59,10 +59,10 @@ SUBSTITUTE GOODS, TECHNOLOGY, SERVICES, OR ANY CLAIMS BY THIRD PARTIES
 #include "i2c_master_noint.h"       // I2C functions
 #include "LSM6DS33.h"               // accelerometer functions
 
-#define MAF_SAMPLES 4
-#define FIR_SAMPLES 4
-#define ALPHA 0.7
-#define BETA 0.3
+#define MAF_SAMPLES 8
+#define FIR_SAMPLES 8
+#define ALPHA 0.75
+#define BETA 0.25
 
 // *****************************************************************************
 // *****************************************************************************
@@ -82,8 +82,7 @@ float IIR = 0.0; // for IIR average
 float IIR_old = 0.0; // previous value for IIR
 float FIR = 0.0; // for FIR average
 int FIRarray[FIR_SAMPLES]; // array for finite impulse response filter
-float FIRweights[] = {0.0416, 0.4584, 0.4584, 0.0416}; // FIR weights (fir1(3,.2))
-//float FIRweights[] = {0.0088, 0.0479, 0.1640, 0.2793, 0.2793, 0.1640, 0.0479, 0.0088}; // FIR weights (fir1(7,.2))
+float FIRweights[] = {0.0088, 0.0479, 0.1640, 0.2793, 0.2793, 0.1640, 0.0479, 0.0088}; // FIR weights (fir1(7,.2))
 
 // *****************************************************************************
 /* Application Data
@@ -457,9 +456,9 @@ void APP_Tasks(void) {
             appData.state = APP_STATE_WAIT_FOR_WRITE_COMPLETE;      
 
             if (appData.isReadComplete) { // echo what was received
+                len = sprintf(dataOut,"%c\r\n",appData.readBuffer[0]);                        
                 USB_DEVICE_CDC_Write(USB_DEVICE_CDC_INDEX_0,
-                        &appData.writeTransferHandle,
-                        appData.readBuffer, 1,
+                        &appData.writeTransferHandle, dataOut, len,
                         USB_DEVICE_CDC_TRANSFER_FLAGS_DATA_COMPLETE);
                 if (appData.readBuffer[0] == 'r') {
                     go = 1;
@@ -467,14 +466,6 @@ void APP_Tasks(void) {
             } else if (go == 1) { // print IMU data at 100 Hz
                 // read current accelerometer data
                 I2C_read_multiple(OUT_TEMP_L, array, 14);
-
-                // update variables
-                temperature = array[1] << 8 | array[0];
-                gyroX = array[3] << 8 | array[2];
-                gyroY = array[5] << 8 | array[4];
-                gyroZ = array[7] << 8 | array[6];
-                accelX = array[9] << 8 | array[8];
-                accelY = array[11] << 8 | array[10];
                 accelZ = array[13] << 8 | array[12];
                 
                 // DSP filters
