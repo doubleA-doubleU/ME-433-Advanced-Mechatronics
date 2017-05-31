@@ -75,12 +75,17 @@
             android:layout_width="640px"
             android:layout_height="480px" />
 
+        <Button
+            android:id="@+id/button1"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Start/Stop" />
+
         <TextView
             android:id="@+id/textView03"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:background="@android:color/holo_green_light"
-            android:text="nothing from usb yet" />
+            android:text="Posotion = " />
 
     </LinearLayout>
 

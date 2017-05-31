@@ -21,7 +21,9 @@ import android.support.v4.content.ContextCompat;
 import android.view.SurfaceHolder;
 import android.view.SurfaceView;
 import android.view.TextureView;
+import android.view.View;
 import android.view.WindowManager;
+import android.widget.Button;
 import android.widget.TextView;
 import android.widget.SeekBar;
 import android.widget.SeekBar.OnSeekBarChangeListener;
@@ -52,19 +54,21 @@ public class MainActivity extends Activity implements TextureView.SurfaceTexture
     private Bitmap bmp = Bitmap.createBitmap(640, 480, Bitmap.Config.ARGB_8888);
     private Canvas canvas = new Canvas(bmp); // for writing text, dots, etc on top of bmp
     private Paint paint1 = new Paint();
-    private TextView mTextView; // FPS
     private TextView myTextView; // threshold
     private TextView myTextView2; // threshold 2
+    private TextView mTextView; // FPS
+    private TextView myTextView3; // position data
     private SeekBar threshold;
     private SeekBar threshold2;
+    private Button button;
     int thresh = 100;
     int thresh2 = 200;
+    int go = 0;
 
     private UsbManager manager;
     private UsbSerialPort sPort;
     private final ExecutorService mExecutor = Executors.newSingleThreadExecutor();
     private SerialInputOutputManager mSerialIoManager;
-    private TextView myTextView3;
 
     static long prevtime = 0; // for FPS calculation
 
@@ -79,7 +83,17 @@ public class MainActivity extends Activity implements TextureView.SurfaceTexture
         myTextView2 = (TextView) findViewById(R.id.textView02);
         mTextView = (TextView) findViewById(R.id.cameraStatus);
         myTextView3 = (TextView) findViewById(R.id.textView03);
+        button = (Button) findViewById(R.id.button1);
 
+        button.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) { // change state variable
+                go = go + 1;
+                if (go > 1) {
+                    go = 0;
+                }
+            }
+        });
 
         // see if the app has permission to use the camera
         ActivityCompat.requestPermissions(MainActivity.this, new String[]{Manifest.permission.CAMERA}, 1);
@@ -165,7 +179,7 @@ public class MainActivity extends Activity implements TextureView.SurfaceTexture
             }
         });
     }
-
+/*
     // USB functionality
     private final SerialInputOutputManager.Listener mListener =
             new SerialInputOutputManager.Listener() {
@@ -275,61 +289,63 @@ public class MainActivity extends Activity implements TextureView.SurfaceTexture
             e.printStackTrace();
         }
     }
-
+*/
     // the important function
     public void onSurfaceTextureUpdated(SurfaceTexture surface) {
-        int M = 0;
-        int sum = 0;
-        int COM;
-        // every time there is a new Camera preview frame
-        mTextureView.getBitmap(bmp);
+        if (go == 1) {
+            int M = 0;
+            int sum = 0;
+            int COM;
+            // every time there is a new Camera preview frame
+            mTextureView.getBitmap(bmp);
 
-        final Canvas c = mSurfaceHolder.lockCanvas();
-        if (c != null) {
-            int[] pixels = new int[bmp.getWidth()]; // pixels[] is the RGBA data
+            final Canvas c = mSurfaceHolder.lockCanvas();
+            if (c != null) {
+                int[] pixels = new int[bmp.getWidth()]; // pixels[] is the RGBA data
 
-            int startY = 240; // which row in the bitmap to analyze to read
-            bmp.getPixels(pixels, 0, bmp.getWidth(), 0, startY, bmp.getWidth(), 1);
-            // in the row, see if the pixel is grey or brown
-            for (int i = 0; i < bmp.getWidth(); i++) {
-                if (red(pixels[i]) >= thresh & red(pixels[i]) <= thresh2 &
-                        red(pixels[i]) > green(pixels[i]) &
-                        red(pixels[i]) > blue(pixels[i])) {
-                    pixels[i] = rgb(0, 255, 0); // over write the pixel with pure green
-                    // COM pixel calculation
-                    M = M+1;
-                    sum = sum + i;
+                int startY = 240; // which row in the bitmap to analyze to read
+                bmp.getPixels(pixels, 0, bmp.getWidth(), 0, startY, bmp.getWidth(), 1);
+                // in the row, see if the pixel is grey or brown
+                for (int i = 0; i < bmp.getWidth(); i++) {
+                    if (red(pixels[i]) >= thresh & red(pixels[i]) <= thresh2 &
+                            red(pixels[i]) > green(pixels[i]) &
+                            red(pixels[i]) > blue(pixels[i])) {
+                        pixels[i] = rgb(0, 255, 0); // over write the pixel with pure green
+                        // COM pixel calculation
+                        M = M + 1;
+                        sum = sum + i;
+                    }
                 }
+                // update the row
+                bmp.setPixels(pixels, 0, bmp.getWidth(), 0, startY, bmp.getWidth(), 1);
+
+                // draw a circle at COM
+                if (M == 0) {
+                    COM = 320;
+                } else {
+                    COM = (sum / M) + 1;
+                }
+                canvas.drawCircle(COM, 240, 5, paint1); // x position, y position, diameter, color
+
+                // write the COM as text
+                canvas.drawText("COM = " + COM, 10, 30, paint1);
+
+                // send COM to PIC
+                //String sendString = String.valueOf(COM) + '\n';
+                //try {
+                    //sPort.write(sendString.getBytes(), 10); // 10 is the timeout
+                //} catch (IOException e) {}
+
             }
-            // update the row
-            bmp.setPixels(pixels, 0, bmp.getWidth(), 0, startY, bmp.getWidth(), 1);
 
-            // draw a circle at COM
-            if (M==0) {
-                COM = 320;
-            } else {
-                COM = (sum / M) + 1;
-            }
-            canvas.drawCircle(COM, 240, 5, paint1); // x position, y position, diameter, color
+            c.drawBitmap(bmp, 0, 0, null);
+            mSurfaceHolder.unlockCanvasAndPost(c);
 
-            // write the COM as text
-            canvas.drawText("COM = " + COM, 10, 30, paint1);
-
-            // send COM to PIC
-            //String sendString = String.valueOf(COM) + '\n';
-            //try {
-            //sPort.write(sendString.getBytes(), 10); // 10 is the timeout
-            //} catch (IOException e) { }
-
+            // calculate the FPS to see how fast the code is running
+            long nowtime = System.currentTimeMillis();
+            long diff = nowtime - prevtime;
+            mTextView.setText("FPS " + 1000 / diff);
+            prevtime = nowtime;
         }
-
-        c.drawBitmap(bmp, 0, 0, null);
-        mSurfaceHolder.unlockCanvasAndPost(c);
-
-        // calculate the FPS to see how fast the code is running
-        long nowtime = System.currentTimeMillis();
-        long diff = nowtime - prevtime;
-        mTextView.setText("FPS " + 1000 / diff);
-        prevtime = nowtime;
     }
 }
