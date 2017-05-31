@@ -56,6 +56,7 @@ SUBSTITUTE GOODS, TECHNOLOGY, SERVICES, OR ANY CLAIMS BY THIRD PARTIES
 #include "app.h"
 #include <stdio.h>
 #include <xc.h>
+#include <math.h>
 
 // *****************************************************************************
 // *****************************************************************************
@@ -65,7 +66,12 @@ SUBSTITUTE GOODS, TECHNOLOGY, SERVICES, OR ANY CLAIMS BY THIRD PARTIES
 
 uint8_t APP_MAKE_BUFFER_DMA_READY dataOut[APP_READ_BUFFER_SIZE];
 uint8_t APP_MAKE_BUFFER_DMA_READY readBuffer[APP_READ_BUFFER_SIZE];
-int len =1, i = 0, go = 0, startTime = 0;
+int len, i = 0, j = 0, startTime = 0;
+char rx[64]; // the raw data
+int rxPos = 0; // how much data has been stored
+int gotRx = 0; // the flag
+int rxVal = 0; // a place to store the int that was received
+int dutyL =0, dutyR = 0; // PWM duty cycles for left and right motors
 
 // *****************************************************************************
 /* Application Data
@@ -338,7 +344,45 @@ void APP_Initialize(void) {
 
     /* Set up the read buffer */
     appData.readBuffer = &readBuffer[0];
-
+    
+    // initialize TMR2 (servo 50 Hz), TMR3 (motors 20 kHz), OC1 (left), OC2 (right), OC3 (servo), digital I/O pins, etc
+    T2CONbits.TCKPS = 0b110;    // Timer2 prescaler N=64 (1:64)
+	PR2 = 24999;                // period = (PR2+1) * N * 12.5 ns = 20 ms, 50 Hz
+	TMR2 = 0;                   // initial TMR2 count is 0
+    T2CONbits.ON = 1;           // turn on Timer2
+    
+    T3CONbits.TCKPS = 0;        // Timer3 prescaler N=1 (1:1)
+	PR3 = 3999;                 // period = (PR3+1) * N * 12.5 ns = 50 us, 20 kHz
+	TMR3 = 0;                   // initial TMR3 count is 0
+    T3CONbits.ON = 1;           // turn on Timer3
+    
+    RPA0Rbits.RPA0R = 0b0101;   // A0 is OC1 (left motor)
+    TRISBbits.TRISB2 = 0;       // B2 is digital output for left motor
+    LATBbits.LATB2 = 1;         // counterclockwise
+	OC1CONbits.OCM = 0b110;     // PWM mode without fault pin; other OC1CON bits are defaults
+	OC1CONbits.OCTSEL = 1;      // OC1 uses Timer3
+	OC1RS = 0;                  // duty cycle = OC1RS/(PR3+1) = 0%
+	OC1R = 0;                   // initialize before turning OC1 on; afterward it is read-only
+    OC1CONbits.ON = 1;			// turn on OC1
+    
+    RPA1Rbits.RPA1R = 0b0101;   // A1 is OC2 (right motor)
+    TRISBbits.TRISB3 = 0;       // B3 is digital output for right motor
+    LATBbits.LATB3 = 1;         // clockwise (inverted motor leads)
+    OC2CONbits.OCM = 0b110;     // PWM mode without fault pin; other OC2CON bits are defaults
+	OC2CONbits.OCTSEL = 1;      // OC2 uses Timer3
+	OC2RS = 0;                  // duty cycle = OC2RS/(PR3+1) = 0%
+	OC2R = 0;                   // initialize before turning OC2 on; afterward it is read-only
+    OC2CONbits.ON = 1;			// turn on OC2
+    
+    RPB14Rbits.RPB14R = 0b0101; // B14 is OC3
+    OC3CONbits.OCM = 0b110;     // PWM mode without fault pin; other OC3CON bits are defaults
+	OC3CONbits.OCTSEL = 0;      // OC3 uses Timer2
+	OC3RS = 0;                  // duty cycle = OC3RS/(PR3+1) = 0%
+	OC3R = 0;                   // initialize before turning OC3 on; afterward it is read-only
+    OC3CONbits.ON = 1;			// turn on OC3
+    
+    TRISBbits.TRISB15 = 1;      // B15 is digital input for position sensor???
+    
     startTime = _CP0_GET_COUNT();
 }
 
@@ -367,7 +411,7 @@ void APP_Tasks(void) {
             } else {
                 /* The Device Layer is not ready to be opened. We should try
                  * again later. */
-            }
+            }         
 
             break;
 
@@ -401,6 +445,24 @@ void APP_Tasks(void) {
                     appData.state = APP_STATE_ERROR;
                     break;
                 }
+                int ii = 0;
+                // loop thru the characters in the buffer
+                while (appData.readBuffer[ii] != 0) {
+                    // if you got a newline
+                    if (appData.readBuffer[ii] == '\n' || appData.readBuffer[ii] == '\r') {
+                        rx[rxPos] = 0; // end the array
+                        sscanf(rx, "%d", &rxVal); // get the int out of the array
+                        gotRx = 1; // set the flag
+                        break; // get out of the while loop
+                    } else if (appData.readBuffer[ii] == 0) {
+                        break; // there was no newline, get out of the while loop
+                    } else {
+                        // save the character into the array
+                        rx[rxPos] = appData.readBuffer[ii];
+                        rxPos++;
+                        ii++;
+                    }
+                }
             }
 
             break;
@@ -415,10 +477,9 @@ void APP_Tasks(void) {
             /* Check if a character was received or a switch was pressed.
              * The isReadComplete flag gets updated in the CDC event handler. */
 
-            if (appData.isReadComplete || _CP0_GET_COUNT()-startTime>(48000000/2/100)) { //100 Hz
+            if (gotRx || _CP0_GET_COUNT() - startTime > (48000000 / 2 / 5)) { // 5 Hz
                 appData.state = APP_STATE_SCHEDULE_WRITE;
             }
-
             break;
 
 
@@ -434,25 +495,54 @@ void APP_Tasks(void) {
             appData.isWriteComplete = false;
             appData.state = APP_STATE_WAIT_FOR_WRITE_COMPLETE;      
 
-            if (appData.isReadComplete) { // echo what was received
-                USB_DEVICE_CDC_Write(USB_DEVICE_CDC_INDEX_0,
-                        &appData.writeTransferHandle,
-                        appData.readBuffer, 1,
-                        USB_DEVICE_CDC_TRANSFER_FLAGS_DATA_COMPLETE);
-                if (appData.readBuffer[0] == 'a') {
-                    //set PWM for  motor A
+            if (gotRx) { // rxVal should eventually be an int between 0 and 640 (from COM)
+                i++;
+                if (rxVal >= 0) { // change to 320
+                    //dutyL = 100;
+                    //dutyR = (-100/320)*rxVal + 200;
+                    
+                    // change LATBbits for forward motion
+                    LATBbits.LATB2 = 1;
+                    LATBbits.LATB3 = 1;
+                } else { 
+                    //dutyL = (100/320)*rxVal;
+                    //dutyR = 100;
+                    
+                    // change LATBbits for reverse motion
+                    LATBbits.LATB2 = 0;
+                    LATBbits.LATB3 = 0;
                 }
-                if (appData.readBuffer[0] == 'b') {
-                    //set PWM for  motor B
-                } 
-            } else {
-                len = 1;
-                dataOut[0] = 0;
+                OC1RS = abs(rxVal)*40; // convert duty cycle based on period register
+                OC2RS = abs(rxVal)*40;
+                len = sprintf(dataOut, "got: %d\r\n", rxVal);
                 USB_DEVICE_CDC_Write(USB_DEVICE_CDC_INDEX_0,
                         &appData.writeTransferHandle, dataOut, len,
                         USB_DEVICE_CDC_TRANSFER_FLAGS_DATA_COMPLETE);
+                rxPos = 0;
+                gotRx = 0; // clear the flag
+                rxVal = 0; // clear the int
+                for (j = 0; j < 64; j++) {
+                    rx[j] = 0; // clear the array
+                }
+            } else { // change this to send position sensor data at 5 Hz
+                i++;
+                len = sprintf(dataOut, "%d\r\n", i);
+                USB_DEVICE_CDC_Write(USB_DEVICE_CDC_INDEX_0,
+                        &appData.writeTransferHandle, dataOut, len,
+                        USB_DEVICE_CDC_TRANSFER_FLAGS_DATA_COMPLETE);
+                
+                // loop servo between 45 and 135 degrees at 1Hz (OC3)
+                /*
+                if (i==5) {
+                    OC3RS = 75*250;
+                }
+                if (i>=10) {
+                    OC3RS = 25*250;
+                    i = 0;
+                }   
+                */             
                 startTime = _CP0_GET_COUNT();
-            }
+            }                
 
             break;
 
@@ -477,8 +567,6 @@ void APP_Tasks(void) {
             break;
     }
 }
-
-
 
 /*******************************************************************************
  End of File
