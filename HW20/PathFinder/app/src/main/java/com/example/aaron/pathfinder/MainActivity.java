@@ -60,8 +60,8 @@ public class MainActivity extends Activity implements TextureView.SurfaceTexture
     private SeekBar threshold;
     private SeekBar threshold2;
     private Button button;
-    int thresh = 100;
-    int thresh2 = 200;
+    int thresh = 180;
+    int thresh2 = 180;
     int go = 0;
 
     private UsbManager manager;
