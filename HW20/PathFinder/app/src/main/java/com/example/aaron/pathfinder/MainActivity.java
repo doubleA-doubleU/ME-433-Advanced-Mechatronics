@@ -56,7 +56,6 @@ public class MainActivity extends Activity implements TextureView.SurfaceTexture
     private Paint paint1 = new Paint();
     private TextView myTextView; // threshold
     private TextView myTextView2; // threshold 2
-    private TextView mTextView; // FPS
     private TextView myTextView3; // position data
     private SeekBar threshold;
     private SeekBar threshold2;
@@ -70,8 +69,6 @@ public class MainActivity extends Activity implements TextureView.SurfaceTexture
     private final ExecutorService mExecutor = Executors.newSingleThreadExecutor();
     private SerialInputOutputManager mSerialIoManager;
 
-    static long prevtime = 0; // for FPS calculation
-
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
@@ -81,7 +78,6 @@ public class MainActivity extends Activity implements TextureView.SurfaceTexture
         threshold2 = (SeekBar) findViewById(R.id.seek2);
         myTextView = (TextView) findViewById(R.id.textView01);
         myTextView2 = (TextView) findViewById(R.id.textView02);
-        mTextView = (TextView) findViewById(R.id.cameraStatus);
         myTextView3 = (TextView) findViewById(R.id.textView03);
         button = (Button) findViewById(R.id.button1);
 
@@ -112,11 +108,6 @@ public class MainActivity extends Activity implements TextureView.SurfaceTexture
             // set the paintbrush for writing text on the image
             paint1.setColor(0xffff0000); // red
             paint1.setTextSize(24);
-
-            mTextView.setText("started camera");
-        } else {
-            mTextView.setText("no camera permissions");
-            // add line to close/restart app??
         }
 
         setMyControlListener();
@@ -318,7 +309,7 @@ public class MainActivity extends Activity implements TextureView.SurfaceTexture
                             red(pixels[i]) > green(pixels[i]) &
                             red(pixels[i]) > blue(pixels[i])) {
                         pixels[i] = rgb(0, 255, 0); // over write the pixel with pure green
-                        // COM pixel calculatio
+                        // COM pixel calculation
                         M = M + 1;
                         sum = sum + i;
                     }
@@ -347,12 +338,6 @@ public class MainActivity extends Activity implements TextureView.SurfaceTexture
 
             c.drawBitmap(bmp, 0, 0, null);
             mSurfaceHolder.unlockCanvasAndPost(c);
-
-            // calculate the FPS to see how fast the code is running
-            long nowtime = System.currentTimeMillis();
-            long diff = nowtime - prevtime;
-            mTextView.setText("FPS " + 1000 / diff);
-            prevtime = nowtime;
         }
     }
 }

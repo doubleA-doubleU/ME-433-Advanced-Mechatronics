@@ -59,12 +59,6 @@
             android:progress="180"
             android:secondaryProgress="0" />
 
-        <TextView
-            android:id="@+id/cameraStatus"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="Nothing yet" />
-
         <SurfaceView
             android:id="@+id/surfaceview"
             android:layout_width="640px"
@@ -85,7 +79,7 @@
             android:id="@+id/textView03"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="Posotion = " />
+            android:text="Position = " />
 
     </LinearLayout>
 
