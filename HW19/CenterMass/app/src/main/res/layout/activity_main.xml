@@ -28,7 +28,7 @@
             android:id="@+id/textView01"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="Lower Limit = 100" />
+            android:text="Blue Less Than: 180" />
 
         <SeekBar
             android:id="@+id/seek1"
@@ -38,14 +38,14 @@
             android:max="255"
             android:paddingBottom="0dp"
             android:paddingTop="0dp"
-            android:progress="100"
+            android:progress="180"
             android:secondaryProgress="0" />
 
         <TextView
             android:id="@+id/textView02"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="Upper Limit = 200" />
+            android:text="Blue Less Than: 180" />
 
         <SeekBar
             android:id="@+id/seek2"
@@ -55,7 +55,7 @@
             android:max="255"
             android:paddingBottom="0dp"
             android:paddingTop="0dp"
-            android:progress="200"
+            android:progress="180"
             android:secondaryProgress="0" />
 
         <TextView

@@ -41,8 +41,8 @@ public class MainActivity extends Activity implements TextureView.SurfaceTexture
     private TextView myTextView2; // threshold 2
     private SeekBar threshold;
     private SeekBar threshold2;
-    int thresh = 100;
-    int thresh2 = 200;
+    int thresh = 180;
+    int thresh2 = 180;
 
     static long prevtime = 0; // for FPS calculation
 
@@ -115,7 +115,7 @@ public class MainActivity extends Activity implements TextureView.SurfaceTexture
             @Override
             public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
                 thresh = progress;
-                myTextView.setText("Lower Limit =  "+thresh);
+                myTextView.setText("Blue Less Than: "+thresh);
             }
 
             @Override
@@ -130,7 +130,7 @@ public class MainActivity extends Activity implements TextureView.SurfaceTexture
             @Override
             public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
                 thresh2 = progress;
-                myTextView2.setText("Upper Limit =  "+thresh2);
+                myTextView2.setText("Green Less Than: "+thresh2);
             }
 
             @Override
@@ -159,7 +159,7 @@ public class MainActivity extends Activity implements TextureView.SurfaceTexture
             bmp.getPixels(pixels, 0, bmp.getWidth(), 0, startY, bmp.getWidth(), 1);
             // in the row, see if the pixel is grey or brown
             for (int i = 0; i < bmp.getWidth(); i++) {
-                if (red(pixels[i]) >= thresh & red(pixels[i]) <= thresh2 &
+                if (blue(pixels[i]) < thresh & green(pixels[i]) < thresh2 &
                         red(pixels[i]) > green(pixels[i]) &
                         red(pixels[i]) > blue(pixels[i])) {
                     pixels[i] = rgb(0, 255, 0); // over write the pixel with pure green
@@ -177,7 +177,7 @@ public class MainActivity extends Activity implements TextureView.SurfaceTexture
             } else {
                 COM = (sum / M) +1;
             }
-            canvas.drawCircle(COM, 240, 5, paint1); // x position, y position, diameter, color
+            canvas.drawCircle(COM, startY, 5, paint1); // x position, y position, diameter, color
 
             // write the COM as text
             canvas.drawText("COM = " + COM, 10, 30, paint1);
