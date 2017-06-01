@@ -91,6 +91,11 @@ public class MainActivity extends Activity implements TextureView.SurfaceTexture
                 go = go + 1;
                 if (go > 1) {
                     go = 0;
+                    // send a 0 to the PIC to stop motors
+                    //String sendString = '0\n';
+                    //try {
+                        //sPort.write(sendString.getBytes(), 10); // 10 is the timeout
+                    //} catch (IOException e) {}
                 }
             }
         });
@@ -152,7 +157,7 @@ public class MainActivity extends Activity implements TextureView.SurfaceTexture
             @Override
             public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
                 thresh = progress;
-                myTextView.setText("Lower Limit =  "+thresh);
+                myTextView.setText("Blue Less Than: "+thresh);
             }
 
             @Override
@@ -167,7 +172,7 @@ public class MainActivity extends Activity implements TextureView.SurfaceTexture
             @Override
             public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
                 thresh2 = progress;
-                myTextView2.setText("Upper Limit =  "+thresh2);
+                myTextView2.setText("Green Less Than: "+thresh2);
             }
 
             @Override
@@ -282,11 +287,13 @@ public class MainActivity extends Activity implements TextureView.SurfaceTexture
 
         //for displaying:
         String rxString = null;
-        try {
-            rxString = new String(data, "UTF-8"); // put the data you got into a string
-            myTextView3.setText("Position =  "+rxString);
-        } catch (UnsupportedEncodingException e) {
-            e.printStackTrace();
+        if (go == 1) {
+            try {
+                rxString = new String(data, "UTF-8"); // put the data you got into a string
+                myTextView3.setText("Position =  "+rxString);
+            } catch (UnsupportedEncodingException e) {
+                e.printStackTrace();
+            }
         }
     }
 */
@@ -303,15 +310,15 @@ public class MainActivity extends Activity implements TextureView.SurfaceTexture
             if (c != null) {
                 int[] pixels = new int[bmp.getWidth()]; // pixels[] is the RGBA data
 
-                int startY = 240; // which row in the bitmap to analyze to read
+                int startY = 360; // which row in the bitmap to analyze to read
                 bmp.getPixels(pixels, 0, bmp.getWidth(), 0, startY, bmp.getWidth(), 1);
                 // in the row, see if the pixel is grey or brown
                 for (int i = 0; i < bmp.getWidth(); i++) {
-                    if (red(pixels[i]) >= thresh & red(pixels[i]) <= thresh2 &
+                    if (blue(pixels[i]) < thresh & green(pixels[i]) < thresh2 &
                             red(pixels[i]) > green(pixels[i]) &
                             red(pixels[i]) > blue(pixels[i])) {
                         pixels[i] = rgb(0, 255, 0); // over write the pixel with pure green
-                        // COM pixel calculation
+                        // COM pixel calculatio
                         M = M + 1;
                         sum = sum + i;
                     }
@@ -321,11 +328,11 @@ public class MainActivity extends Activity implements TextureView.SurfaceTexture
 
                 // draw a circle at COM
                 if (M == 0) {
-                    COM = 320;
+                    COM = 0;
                 } else {
                     COM = (sum / M) + 1;
                 }
-                canvas.drawCircle(COM, 240, 5, paint1); // x position, y position, diameter, color
+                canvas.drawCircle(COM, startY, 5, paint1); // x position, y position, diameter, color
 
                 // write the COM as text
                 canvas.drawText("COM = " + COM, 10, 30, paint1);

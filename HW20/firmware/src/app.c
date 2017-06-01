@@ -66,12 +66,13 @@ SUBSTITUTE GOODS, TECHNOLOGY, SERVICES, OR ANY CLAIMS BY THIRD PARTIES
 
 uint8_t APP_MAKE_BUFFER_DMA_READY dataOut[APP_READ_BUFFER_SIZE];
 uint8_t APP_MAKE_BUFFER_DMA_READY readBuffer[APP_READ_BUFFER_SIZE];
-int len, i = 0, j = 0, startTime = 0;
+int len, i = 0, j = 0, startTime = 0, go = 0;
 char rx[64]; // the raw data
 int rxPos = 0; // how much data has been stored
 int gotRx = 0; // the flag
 int rxVal = 0; // a place to store the int that was received
 int dutyL =0, dutyR = 0; // PWM duty cycles for left and right motors
+double xPos = 0.0, yPos = 0.0;
 
 // *****************************************************************************
 /* Application Data
@@ -377,11 +378,28 @@ void APP_Initialize(void) {
     RPB14Rbits.RPB14R = 0b0101; // B14 is OC3
     OC3CONbits.OCM = 0b110;     // PWM mode without fault pin; other OC3CON bits are defaults
 	OC3CONbits.OCTSEL = 0;      // OC3 uses Timer2
-	OC3RS = 0;                  // duty cycle = OC3RS/(PR3+1) = 0%
-	OC3R = 0;                   // initialize before turning OC3 on; afterward it is read-only
+	OC3RS = 1150;               // duty cycle = OC3RS/(PR3+1) = 0%
+	OC3R = 1150;                // initialize before turning OC3 on; afterward it is read-only
     OC3CONbits.ON = 1;			// turn on OC3
     
-    IC4Rbits.IC4R = 0b0011;     // IC4 on B15 for position sensor
+    // initialize the sensor variables
+    V1.prevMic = 0;
+    V1.horzAng = 0;
+    V1.vertAng = 0;
+    V1.useMe = 0;
+    V1.collected = 0;
+
+    TRISBbits.TRISB15 = 1;      // connect the TS3633 ENV pin to B15
+    IC4Rbits.IC4R = 0b0011;     // B15 is IC4 (input capture 4)
+    IC4CONbits.ICM = 1;         // detect rising and falling edges
+    IC4CONbits.ICI = 0;         // interrupt on an edge
+    IC4CONbits.ICTMR = 1;       // store the value of timer2, but we're actually just using the interrupt and ignoring timer2
+    IC4CONbits.FEDGE = 0;       // first event is falling edge, doesn't really matter
+    IC4CONbits.ON = 1;
+    IPC4bits.IC4IP = 5;         // step 4: interrupt priority 5
+    IPC4bits.IC4IS = 1;         // step 4: interrupt priority 1
+    IFS0bits.IC4IF = 0;         // step 5: clear the int flag
+    IEC0bits.IC4IE = 1;         // step 6: enable INT0 by setting IEC0<3>
     
     startTime = _CP0_GET_COUNT();
 }
@@ -496,49 +514,62 @@ void APP_Tasks(void) {
             appData.state = APP_STATE_WAIT_FOR_WRITE_COMPLETE;      
 
             if (gotRx) { // rxVal should be an int between 0 and 640 (from COM)
-                if (rxVal >= 320) {
+                if (rxVal <= 0 | rxVal > 640) {
+                    dutyL = 0;
+                    dutyR = 0;
+                    OC3RS = 1150;
+                    go = 0;
+                } else if (rxVal >= 320) {
                     dutyL = 100;
                     dutyR = 180 - (rxVal/4); // dutyR will be between 20 and 100
+                    go = 1;
                 } else { 
                     dutyL = 20 + (rxVal/4); // dutyL will be between 20 and 100
                     dutyR = 100;
+                    go = 1;
                 }
                 OC1RS = dutyL*40; // convert duty cycle based on period register
                 OC2RS = dutyR*40;
                 len = 1;
                 dataOut[0] = 0; // send nothing
-                USB_DEVICE_CDC_Write(USB_DEVICE_CDC_INDEX_0,
-                        &appData.writeTransferHandle, dataOut, len,
-                        USB_DEVICE_CDC_TRANSFER_FLAGS_DATA_COMPLETE);
-                rxPos = 0;
-                gotRx = 0; // clear the flag
-                rxVal = 0; // clear the int
+                if (go == 1) {
+                    USB_DEVICE_CDC_Write(USB_DEVICE_CDC_INDEX_0,
+                            &appData.writeTransferHandle, dataOut, len,
+                            USB_DEVICE_CDC_TRANSFER_FLAGS_DATA_COMPLETE);
+                    rxPos = 0;
+                    gotRx = 0; // clear the flag
+                    rxVal = 0; // clear the int
+                }
                 for (j = 0; j < 64; j++) {
                     rx[j] = 0; // clear the array
                 }
             } else { // change this to calculate/send position sensor data at 5 Hz, not i
                 i++;
-                len = sprintf(dataOut, "%d\r\n", i);
+                xPos = tan((V1.vertAng - 90.0) * DEG_TO_RAD) * LIGHTHOUSEHEIGHT;
+                yPos = tan((V1.horzAng - 90.0) * DEG_TO_RAD) * LIGHTHOUSEHEIGHT;
+                len = sprintf(dataOut, "%f, %f\r\n", xPos, yPos);
                 USB_DEVICE_CDC_Write(USB_DEVICE_CDC_INDEX_0,
                         &appData.writeTransferHandle, dataOut, len,
                         USB_DEVICE_CDC_TRANSFER_FLAGS_DATA_COMPLETE);
-                
-                /* loop servo between 45 and 135 degrees at 1Hz (OC3)
-                 * 0.36 ms / 0 degrees   ->  (0.36/20)*(25000) = 450 counts
-                 * 0.64 ms / 135 degrees ->  (0.64/20)*(25000) = 800 counts
-                 * 0.92 ms / 90 degrees  ->  (0.92/20)*(25000) = 1150 counts
-                 * 1.20 ms / 135 degrees ->  (1.20/20)*(25000) = 1500 counts
-                 * 1.48 ms / 180 degrees ->  (1.48/20)*(25000) = 1850 counts
-                 */
-                if (i==5) {
-                    OC3RS = 800; // 45 degrees
+
+                if (go == 1) {
+                    /* loop servo between 45 and 135 degrees at 1Hz (OC3)
+                    * 0.36 ms / 0 degrees   ->  (0.36/20)*(25000) = 450 counts
+                    * 0.64 ms / 135 degrees ->  (0.64/20)*(25000) = 800 counts
+                    * 0.92 ms / 90 degrees  ->  (0.92/20)*(25000) = 1150 counts
+                    * 1.20 ms / 135 degrees ->  (1.20/20)*(25000) = 1500 counts
+                    * 1.48 ms / 180 degrees ->  (1.48/20)*(25000) = 1850 counts
+                    */
+                    if (i == 5) {
+                        OC3RS = 800; // 45 degrees
+                    }
+                    if (i >= 10) {
+                        OC3RS = 1500; // 135 degrees 
+                        i = 0;
+                    }
+
+                    startTime = _CP0_GET_COUNT();
                 }
-                if (i>=10) {
-                    OC3RS = 1500; // 135 degrees 
-                    i = 0;
-                }   
-                             
-                startTime = _CP0_GET_COUNT();
             }                
 
             break;
