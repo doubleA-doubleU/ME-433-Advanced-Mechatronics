@@ -45,7 +45,7 @@
             android:id="@+id/textView02"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="Blue Less Than: 180" />
+            android:text="Green Less Than: 180" />
 
         <SeekBar
             android:id="@+id/seek2"
