@@ -72,7 +72,8 @@ int rxPos = 0; // how much data has been stored
 int gotRx = 0; // the flag
 int rxVal = 0; // a place to store the int that was received
 int dutyL =0, dutyR = 0; // PWM duty cycles for left and right motors
-double xPos = 0.0, yPos = 0.0;
+double xPos = 0.0, yPos = 0.0, xStart = 0.0, yStart = 0.0;
+float lapTime = 0.0; // in seconds
 
 // *****************************************************************************
 /* Application Data
@@ -346,7 +347,7 @@ void APP_Initialize(void) {
     /* Set up the read buffer */
     appData.readBuffer = &readBuffer[0];
     
-    // initialize TMR2 (servo 50 Hz), TMR3 (motors 20 kHz), OC1 (left), OC2 (right), OC3 (servo), digital I/O pins, etc
+    // initialize TMR2 (servo 50 Hz), TMR3 (motors 20 kHz), OC1 (left), OC2 (right), OC3 (servo), IC4 (position)
     T2CONbits.TCKPS = 0b110;    // Timer2 prescaler N=64 (1:64)
 	PR2 = 24999;                // period = (PR2+1) * N * 12.5 ns = 20 ms, 50 Hz
 	TMR2 = 0;                   // initial TMR2 count is 0
@@ -378,8 +379,8 @@ void APP_Initialize(void) {
     RPB14Rbits.RPB14R = 0b0101; // B14 is OC3
     OC3CONbits.OCM = 0b110;     // PWM mode without fault pin; other OC3CON bits are defaults
 	OC3CONbits.OCTSEL = 0;      // OC3 uses Timer2
-	OC3RS = 1150;               // duty cycle = OC3RS/(PR3+1) = 0%
-	OC3R = 1150;                // initialize before turning OC3 on; afterward it is read-only
+	OC3RS = 1080;               // duty cycle = OC3RS/(PR3+1)
+	OC3R = 1080;                // initialize before turning OC3 on; afterward it is read-only
     OC3CONbits.ON = 1;			// turn on OC3
     
     // initialize the sensor variables
@@ -393,7 +394,7 @@ void APP_Initialize(void) {
     IC4Rbits.IC4R = 0b0011;     // B15 is IC4 (input capture 4)
     IC4CONbits.ICM = 1;         // detect rising and falling edges
     IC4CONbits.ICI = 0;         // interrupt on an edge
-    IC4CONbits.ICTMR = 1;       // store the value of timer2, but we're actually just using the interrupt and ignoring timer2
+    IC4CONbits.ICTMR = 0;       // store the value of timer3, but we're actually just using the interrupt and ignoring timer3
     IC4CONbits.FEDGE = 0;       // first event is falling edge, doesn't really matter
     IC4CONbits.ON = 1;
     IPC4bits.IC4IP = 5;         // step 4: interrupt priority 5
@@ -495,7 +496,7 @@ void APP_Tasks(void) {
             /* Check if a character was received or a switch was pressed.
              * The isReadComplete flag gets updated in the CDC event handler. */
 
-            if (gotRx || _CP0_GET_COUNT() - startTime > (48000000 / 2 / 5)) { // 5 Hz
+            if (gotRx || _CP0_GET_COUNT() - startTime > (48000000 / 2 / 25)) { // 25 Hz
                 appData.state = APP_STATE_SCHEDULE_WRITE;
             }
             break;
@@ -506,71 +507,106 @@ void APP_Tasks(void) {
             if (APP_StateReset()) {
                 break;
             }
-             
+
             /* Setup the write */
 
             appData.writeTransferHandle = USB_DEVICE_CDC_TRANSFER_HANDLE_INVALID;
             appData.isWriteComplete = false;
-            appData.state = APP_STATE_WAIT_FOR_WRITE_COMPLETE;      
+            appData.state = APP_STATE_WAIT_FOR_WRITE_COMPLETE;
 
-            if (gotRx) { // rxVal should be an int between 0 and 640 (from COM)
-                if (rxVal <= 0 | rxVal > 640) {
+            if (gotRx) { // rxVal should be an int between 0 and 640 (setting motor speeds from Center of Mass)
+
+                // establish starting position the first time through the loop
+                if (lapTime == 0.0) {
+                    xStart = tan((V1.vertAng - 90.0) * DEG_TO_RAD) * LIGHTHOUSEHEIGHT;
+                    yStart = tan((V1.horzAng - 90.0) * DEG_TO_RAD) * LIGHTHOUSEHEIGHT;
+                }
+
+                if (rxVal <= 0) {
                     dutyL = 0;
                     dutyR = 0;
-                    OC3RS = 1150;
+                    OC3RS = 1080;
+                } else if ( rxVal > 640) {
+                    dutyL = 0;
+                    dutyR = 0;
+                    OC3RS = 1080;
                     go = 0;
+                    lapTime = 0.0;
                 } else if (rxVal >= 320) {
                     dutyL = 100;
                     dutyR = 180 - (rxVal/4); // dutyR will be between 20 and 100
                     go = 1;
-                } else { 
+                } else {
                     dutyL = 20 + (rxVal/4); // dutyL will be between 20 and 100
                     dutyR = 100;
                     go = 1;
                 }
                 OC1RS = dutyL*40; // convert duty cycle based on period register
-                OC2RS = dutyR*40;
-                len = 1;
-                dataOut[0] = 0; // send nothing
-                if (go == 1) {
-                    USB_DEVICE_CDC_Write(USB_DEVICE_CDC_INDEX_0,
-                            &appData.writeTransferHandle, dataOut, len,
-                            USB_DEVICE_CDC_TRANSFER_FLAGS_DATA_COMPLETE);
-                    rxPos = 0;
-                    gotRx = 0; // clear the flag
-                    rxVal = 0; // clear the int
-                }
+                OC2RS = 0.965*dutyR*40;
+
+                rxPos = 0;
+                gotRx = 0; // clear the flag
+                rxVal = 0; // clear the int
+
                 for (j = 0; j < 64; j++) {
                     rx[j] = 0; // clear the array
                 }
-            } else { // change this to calculate/send position sensor data at 5 Hz, not i
-                i++;
+            }
+
+            if (go == 1) {
+                // send position and lap time to phone
                 xPos = tan((V1.vertAng - 90.0) * DEG_TO_RAD) * LIGHTHOUSEHEIGHT;
                 yPos = tan((V1.horzAng - 90.0) * DEG_TO_RAD) * LIGHTHOUSEHEIGHT;
-                len = sprintf(dataOut, "%f, %f\r\n", xPos, yPos);
+                lapTime = lapTime + ((float) (_CP0_GET_COUNT() - startTime)) / 24000000;
+                len = sprintf(dataOut, "X: %.3f (ft)\r\nY: %.3f (ft)\r\nLap Time: %.3f (s)\r\n", xPos, yPos, lapTime);
                 USB_DEVICE_CDC_Write(USB_DEVICE_CDC_INDEX_0,
                         &appData.writeTransferHandle, dataOut, len,
                         USB_DEVICE_CDC_TRANSFER_FLAGS_DATA_COMPLETE);
+                
+                // wave flag using servo
+                OC3RS = 1080 + 300*sin(7*lapTime);
+                
+            } else {
+                len = 1;
+                dataOut[0] = 0; // send nothing
+                USB_DEVICE_CDC_Write(USB_DEVICE_CDC_INDEX_0,
+                        &appData.writeTransferHandle, dataOut, len,
+                        USB_DEVICE_CDC_TRANSFER_FLAGS_DATA_COMPLETE);
+            }
 
-                if (go == 1) {
-                    /* loop servo between 45 and 135 degrees at 1Hz (OC3)
-                    * 0.36 ms / 0 degrees   ->  (0.36/20)*(25000) = 450 counts
-                    * 0.64 ms / 135 degrees ->  (0.64/20)*(25000) = 800 counts
-                    * 0.92 ms / 90 degrees  ->  (0.92/20)*(25000) = 1150 counts
-                    * 1.20 ms / 135 degrees ->  (1.20/20)*(25000) = 1500 counts
-                    * 1.48 ms / 180 degrees ->  (1.48/20)*(25000) = 1850 counts
-                    */
-                    if (i == 5) {
-                        OC3RS = 800; // 45 degrees
-                    }
-                    if (i >= 10) {
-                        OC3RS = 1500; // 135 degrees 
-                        i = 0;
-                    }
+            // victory condition (lap complete)
+            if (abs(xPos - xStart) < 0.1 && abs(yPos - yStart) < 0.1 && lapTime > 10.0 && xPos > -20000.0) {
+                // servo to 90 degrees
+                OC3RS = 1080;
 
-                    startTime = _CP0_GET_COUNT();
-                }
-            }                
+                // drive forward for 1 second
+                OC1RS = 100*40;
+                OC2RS = 0.965*100*40;
+                startTime = _CP0_GET_COUNT();
+                while (_CP0_GET_COUNT() - startTime < 1*(48000000/2)) {;}
+
+                // left spin for 2.25 seconds
+                LATBbits.LATB2 = 0; // left motor reverse
+                LATBbits.LATB3 = 1; // right motor forward
+                startTime = _CP0_GET_COUNT();
+                while (_CP0_GET_COUNT() - startTime < 2.25*(48000000/2)) {;}
+
+                // right spin for 2.4 seconds
+                LATBbits.LATB2 = 1; // left motor forward
+                LATBbits.LATB3 = 0; // right motor reverse
+                startTime = _CP0_GET_COUNT();
+                while (_CP0_GET_COUNT() - startTime < 2.4*(48000000/2)) {;}
+
+                // reset variables
+                LATBbits.LATB2 = 1;
+                LATBbits.LATB3 = 1;
+                OC1RS = 0;
+                OC2RS = 0;
+                go = 0;
+                i = 0;
+                lapTime = 0.0;
+            }
+            startTime = _CP0_GET_COUNT();
 
             break;
 

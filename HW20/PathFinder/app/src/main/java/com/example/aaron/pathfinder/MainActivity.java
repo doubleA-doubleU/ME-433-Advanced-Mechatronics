@@ -52,11 +52,11 @@ public class MainActivity extends Activity implements TextureView.SurfaceTexture
     private SurfaceView mSurfaceView;
     private SurfaceHolder mSurfaceHolder;
     private Bitmap bmp = Bitmap.createBitmap(640, 480, Bitmap.Config.ARGB_8888);
-    private Canvas canvas = new Canvas(bmp); // for writing text, dots, etc on top of bmp
+    private Canvas canvas = new Canvas(bmp);
     private Paint paint1 = new Paint();
-    private TextView myTextView; // threshold
-    private TextView myTextView2; // threshold 2
-    private TextView myTextView3; // position data
+    private TextView myTextView;
+    private TextView myTextView2;
+    private TextView myTextView3;
     private SeekBar threshold;
     private SeekBar threshold2;
     private Button button;
@@ -87,17 +87,18 @@ public class MainActivity extends Activity implements TextureView.SurfaceTexture
                 go = go + 1;
                 if (go > 1) {
                     go = 0;
-                    // send a 0 to the PIC to stop motors
-                    //String sendString = '0\n';
-                    //try {
-                        //sPort.write(sendString.getBytes(), 10); // 10 is the timeout
-                    //} catch (IOException e) {}
+                    // send 641 to the PIC to stop motors (outside of expected range for COM)
+                    int temp = 641;
+                    String sendString = String.valueOf(temp) + '\n';
+                    try {
+                        sPort.write(sendString.getBytes(), 10); // 10 is the timeout
+                    } catch (IOException e) {}
                 }
             }
         });
 
         // see if the app has permission to use the camera
-        ActivityCompat.requestPermissions(MainActivity.this, new String[]{Manifest.permission.CAMERA}, 1);
+        //ActivityCompat.requestPermissions(MainActivity.this, new String[]{Manifest.permission.CAMERA}, 1);
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
             mSurfaceView = (SurfaceView) findViewById(R.id.surfaceview);
             mSurfaceHolder = mSurfaceView.getHolder();
@@ -175,7 +176,7 @@ public class MainActivity extends Activity implements TextureView.SurfaceTexture
             }
         });
     }
-/*
+
     // USB functionality
     private final SerialInputOutputManager.Listener mListener =
             new SerialInputOutputManager.Listener() {
@@ -277,17 +278,17 @@ public class MainActivity extends Activity implements TextureView.SurfaceTexture
         //do something with received data
 
         //for displaying:
-        String rxString = null;
-        if (go == 1) {
+        if (go ==1) {
+            String rxString = null;
             try {
                 rxString = new String(data, "UTF-8"); // put the data you got into a string
-                myTextView3.setText("Position =  "+rxString);
+                myTextView3.setText(rxString);
             } catch (UnsupportedEncodingException e) {
                 e.printStackTrace();
             }
         }
     }
-*/
+
     // the important function
     public void onSurfaceTextureUpdated(SurfaceTexture surface) {
         if (go == 1) {
@@ -301,7 +302,7 @@ public class MainActivity extends Activity implements TextureView.SurfaceTexture
             if (c != null) {
                 int[] pixels = new int[bmp.getWidth()]; // pixels[] is the RGBA data
 
-                int startY = 360; // which row in the bitmap to analyze to read
+                int startY = 240; // which row in the bitmap to analyze to read
                 bmp.getPixels(pixels, 0, bmp.getWidth(), 0, startY, bmp.getWidth(), 1);
                 // in the row, see if the pixel is grey or brown
                 for (int i = 0; i < bmp.getWidth(); i++) {
@@ -328,11 +329,11 @@ public class MainActivity extends Activity implements TextureView.SurfaceTexture
                 // write the COM as text
                 canvas.drawText("COM = " + COM, 10, 30, paint1);
 
-                // send COM to PIC
-                //String sendString = String.valueOf(COM) + '\n';
-                //try {
-                    //sPort.write(sendString.getBytes(), 10); // 10 is the timeout
-                //} catch (IOException e) {}
+                //send COM to PIC
+                String sendString = String.valueOf(COM) + '\n';
+                try {
+                    sPort.write(sendString.getBytes(), 10); // 10 is the timeout
+                } catch (IOException e) {}
 
             }
 
