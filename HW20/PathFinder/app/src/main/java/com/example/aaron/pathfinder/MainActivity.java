@@ -90,9 +90,12 @@ public class MainActivity extends Activity implements TextureView.SurfaceTexture
                     // send 641 to the PIC to stop motors (outside of expected range for COM)
                     int temp = 641;
                     String sendString = String.valueOf(temp) + '\n';
-                    try {
-                        sPort.write(sendString.getBytes(), 10); // 10 is the timeout
-                    } catch (IOException e) {}
+                    for (int j = 0; j < 3; j++) {
+                        try {
+                            sPort.write(sendString.getBytes(), 10); // 10 is the timeout
+                        } catch (IOException e) {
+                        }
+                    }
                 }
             }
         });
@@ -302,7 +305,7 @@ public class MainActivity extends Activity implements TextureView.SurfaceTexture
             if (c != null) {
                 int[] pixels = new int[bmp.getWidth()]; // pixels[] is the RGBA data
 
-                int startY = 240; // which row in the bitmap to analyze to read
+                int startY = 300; // which row in the bitmap to analyze to read
                 bmp.getPixels(pixels, 0, bmp.getWidth(), 0, startY, bmp.getWidth(), 1);
                 // in the row, see if the pixel is grey or brown
                 for (int i = 0; i < bmp.getWidth(); i++) {
