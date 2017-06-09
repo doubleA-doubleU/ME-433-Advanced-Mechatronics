@@ -310,8 +310,8 @@ public class MainActivity extends Activity implements TextureView.SurfaceTexture
                 // in the row, see if the pixel is grey or brown
                 for (int i = 0; i < bmp.getWidth(); i++) {
                     if (blue(pixels[i]) < thresh & green(pixels[i]) < thresh2 &
-                            red(pixels[i]) > green(pixels[i]) &
-                            red(pixels[i]) > blue(pixels[i])) {
+                            red(pixels[i]) > (green(pixels[i]) +5 )&
+                            red(pixels[i]) > (blue(pixels[i])) +5) {
                         pixels[i] = rgb(0, 255, 0); // over write the pixel with pure green
                         // COM pixel calculation
                         M = M + 1;

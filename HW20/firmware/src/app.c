@@ -523,20 +523,29 @@ void APP_Tasks(void) {
                 }
 
                 if (rxVal <= 0) {
-                    dutyL = 0;
-                    dutyR = 0;
+                    dutyL = 30;
+                    dutyR = 30;
+                    LATBbits.LATB2 = 0;
+                    LATBbits.LATB3 = 0;
                     OC3RS = 1080;
+                    go = 1;
                 } else if ( rxVal > 640) {
+                    LATBbits.LATB2 = 1;
+                    LATBbits.LATB3 = 1;
                     dutyL = 0;
                     dutyR = 0;
                     OC3RS = 1080;
                     go = 0;
                     lapTime = 0.0;
                 } else if (rxVal >= 320) {
+                    LATBbits.LATB2 = 1;
+                    LATBbits.LATB3 = 1;
                     dutyL = 100;
                     dutyR = 180 - (rxVal/4); // dutyR will be between 20 and 100
                     go = 1;
                 } else {
+                    LATBbits.LATB2 = 1;
+                    LATBbits.LATB3 = 1;
                     dutyL = 20 + (rxVal/4); // dutyL will be between 20 and 100
                     dutyR = 100;
                     go = 1;
